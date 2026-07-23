@@ -83,7 +83,7 @@ def crear_silver():
     df = df.dropna(subset=["compra", "venta"])
 
     # Eliminar duplicados dentro del batch nuevo (defensa extra ante reintentos)
-    df = df.drop_duplicates(subset=["casa", "moneda", "fechaActualizacion"])
+    df = df.drop_duplicates(subset=["tipo_dolar", "moneda", "fechaActualizacion"])
 
     # Crear columnas derivadas
     fecha = pd.to_datetime(df["fechaActualizacion"])
