@@ -69,6 +69,12 @@ def crear_silver():
         .str.strip()
     )
 
+    # Renombrar columnas
+    df = df.rename(columns={"casa": "tipo_dolar"})
+
+    # Eliminar columnas redundantes
+    df = df.drop(columns=["nombre"])
+
     # Convertir tipos
     df["compra"] = pd.to_numeric(df["compra"], errors="coerce")
     df["venta"] = pd.to_numeric(df["venta"], errors="coerce")

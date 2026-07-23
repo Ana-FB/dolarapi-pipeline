@@ -46,7 +46,7 @@ def crear_gold():
     # Orden necesario para cálculo histórico
 
     df = df.sort_values(
-        ["casa", "fecha"]
+        ["tipo_dolar", "fecha"]
     )
 
 
@@ -54,7 +54,7 @@ def crear_gold():
 
     df["venta_dia_anterior"] = (
         df
-        .groupby("casa")["venta"]
+        .groupby("tipo_dolar")["venta"]
         .shift(1)
     )
 
@@ -107,11 +107,8 @@ def crear_gold():
 
 
     job.result()
-
-
-    print(
-        f"Gold creada correctamente. Registros cargados: {len(df)}"
-    )
+    print(f"Gold actualizada correctamente. Se generaron {len(df)} registros.")
+    
 
 
 if __name__ == "__main__":
