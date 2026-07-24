@@ -11,7 +11,7 @@ DolarAPI  ──▶  Bronze  ──▶  Silver  ──▶  Gold
 
 - **Extract** ([extract/extract.py](extract/extract.py)): llama a la API y devuelve el JSON crudo con las cotizaciones de todas las casas de cambio.
 - **Bronze** ([load/bronze.py](load/bronze.py)): carga los datos crudos tal cual llegan de la API en `capa_bronze_dolares`, agregando metadata de carga (`fecha_carga`, `fuente`). Tabla particionada por día, con `WRITE_APPEND`.
-- **Silver** ([transform/silver.py](transform/silver.py)): toma los registros nuevos del día desde Bronze, evitando duplicados ya existentes en Silver, y aplica limpieza:
+- **Silver** ([transform/silver.py](transform/silver.py)): trae de Bronze todo lo posterior a la última fecha de carga que ya tiene Silver (`MAX(fecha_carga)`), en vez de fijarse solo en "hoy" — así, si el pipeline no corrió algún día, esa carga se recupera sola en la próxima corrida en vez de perderse. Si Silver está vacía o no existe todavía, trae todo el histórico disponible en Bronze. Además, evita duplicados ya existentes en Silver (`NOT EXISTS`) y aplica limpieza:
   - normaliza el contenido de texto (valores de `casa` en minúsculas, valores de `moneda` en mayúsculas)
   - renombra la columna `casa` a `tipo_dolar` para mayor claridad semántica
   - elimina la columna `nombre` (redundante con `tipo_dolar`)
