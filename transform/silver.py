@@ -30,6 +30,9 @@ def crear_silver():
 
     if silver_existe(client, tabla_ref):
         # Ya existe historial: traer solo lo nuevo que no esté ya cargado
+        # Nota: en bronze la columna se llama "casa", pero en silver ya quedó
+        # renombrada a "tipo_dolar" (ver rename mas abajo), por eso se comparan
+        # nombres distintos a cada lado del NOT EXISTS.
         query = f"""
         SELECT a.*
         FROM `{PROJECT_ID}.{DATASET_ID}.capa_bronze_dolares` a
@@ -37,7 +40,7 @@ def crear_silver():
         AND NOT EXISTS (
             SELECT 1
             FROM `{tabla_ref}` b
-            WHERE b.casa = a.casa
+            WHERE b.tipo_dolar = a.casa
             AND b.moneda = a.moneda
             AND b.fechaActualizacion = a.fechaActualizacion
         )
