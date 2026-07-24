@@ -21,6 +21,21 @@ def silver_existe(client, tabla_ref):
         return False
 
 
+def obtener_ultima_fecha_silver(client, tabla_ref):
+    """Devuelve la última fecha de carga que ya tiene Silver, o None si está vacía."""
+
+    query = f"""
+    SELECT MAX(fecha_carga) AS ultima_fecha
+    FROM `{tabla_ref}`
+    """
+
+    df = client.query(query).to_dataframe()
+
+    ultima_fecha = df["ultima_fecha"][0]
+
+    return ultima_fecha
+
+
 def crear_silver():
     """Transforma los datos nuevos de Bronze y los agrega (append) a Silver."""
 
@@ -28,32 +43,41 @@ def crear_silver():
 
     tabla_ref = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
 
+    # --- VERSIÓN : incremental basada en MAX(fecha_carga) de Silver ---
     if silver_existe(client, tabla_ref):
-        # Ya existe historial: traer solo lo nuevo que no esté ya cargado
-        # Nota: en bronze la columna se llama "casa", pero en silver ya quedó
-        # renombrada a "tipo_dolar" (ver rename mas abajo), por eso se comparan
-        # nombres distintos a cada lado del NOT EXISTS.
-        query = f"""
-        SELECT a.*
-        FROM `{PROJECT_ID}.{DATASET_ID}.capa_bronze_dolares` a
-        WHERE DATE(a.fecha_carga) = CURRENT_DATE("America/Argentina/Buenos_Aires")
-        AND NOT EXISTS (
-            SELECT 1
-            FROM `{tabla_ref}` b
-            WHERE b.tipo_dolar = a.casa
-            AND b.moneda = a.moneda
-            AND b.fechaActualizacion = a.fechaActualizacion
-        )
-        """
+        # Silver ya existe: traer solo lo nuevo que no esté ya cargado
+        ultima_fecha = obtener_ultima_fecha_silver(client, tabla_ref)
+
+        if ultima_fecha is None:
+            # Silver existe pero está vacía: mismo caso que "no existe"
+            query = f"""
+            SELECT a.*
+            FROM `{PROJECT_ID}.{DATASET_ID}.capa_bronze_dolares` a
+            """
+        else:
+            query = f"""
+            SELECT a.*
+            FROM `{PROJECT_ID}.{DATASET_ID}.capa_bronze_dolares` a
+            WHERE DATE(a.fecha_carga) > DATE('{ultima_fecha}')
+            AND NOT EXISTS (
+                SELECT 1
+                FROM `{tabla_ref}` b
+                WHERE b.tipo_dolar = a.casa
+                AND b.moneda = a.moneda
+                AND b.fechaActualizacion = a.fechaActualizacion
+            )
+            """
     else:
         # Primera carga: Silver no existe todavía, no hay nada contra qué comparar
         query = f"""
         SELECT a.*
         FROM `{PROJECT_ID}.{DATASET_ID}.capa_bronze_dolares` a
-        WHERE DATE(a.fecha_carga) = CURRENT_DATE("America/Argentina/Buenos_Aires")
         """
 
     df = client.query(query).to_dataframe()
+
+    ultima_fecha = obtener_ultima_fecha_silver(client, tabla_ref)
+    print(f"DEBUG - ultima_fecha: {ultima_fecha} (tipo: {type(ultima_fecha)})")
 
     if df.empty:
         print("No hay registros nuevos para cargar en Silver.")
