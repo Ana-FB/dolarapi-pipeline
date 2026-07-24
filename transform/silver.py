@@ -77,7 +77,6 @@ def crear_silver():
     df = client.query(query).to_dataframe()
 
     ultima_fecha = obtener_ultima_fecha_silver(client, tabla_ref)
-    print(f"DEBUG - ultima_fecha: {ultima_fecha} (tipo: {type(ultima_fecha)})")
 
     if df.empty:
         print("No hay registros nuevos para cargar en Silver.")
