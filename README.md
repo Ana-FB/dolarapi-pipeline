@@ -12,22 +12,11 @@ DolarAPI  ──▶  Bronze  ──▶  Silver  ──▶  Gold
 - **Extract** ([extract/extract.py](extract/extract.py)): llama a la API y devuelve el JSON crudo con las cotizaciones de todas las casas de cambio.
 - **Bronze** ([load/bronze.py](load/bronze.py)): carga los datos crudos tal cual llegan de la API en `capa_bronze_dolares`, agregando metadata de carga (`fecha_carga`, `fuente`). Tabla particionada por día, con `WRITE_APPEND`.
 
-* Silver ([transform/silver.py](https://github.com/Ana-FB/dolarapi-pipeline/blob/main/transform/silver.py)): trae de Bronze todo lo posterior a la última fecha de carga que ya tiene Silver (`MAX(fecha_carga)`), en vez de fijarse solo en "hoy" — así, si el pipeline no corrió algún día, esa carga se recupera sola en la próxima corrida en vez de perderse. Si Silver está vacía o no existe todavía, trae todo el histórico disponible en Bronze. Como defensa extra ante reintentos cercanos en el tiempo, aplica `drop_duplicates` dentro del mismo batch nuevo (no compara contra todo el histórico de Silver). Además, aplica limpieza:
-  - normaliza el contenido de texto (valores de `casa` en minúsculas, valores de `moneda` en mayúsculas)
-  - renombra la columna `casa` a `tipo_dolar` para mayor claridad semántica
-  - elimina la columna `nombre` (redundante con `tipo_dolar`)
-  - convierte `compra`/`venta` a numérico y descarta filas inválidas
-  - deriva columnas `fecha` y `hora`
-  - se guarda en `capa_silver_dolares` (`WRITE_APPEND`, acumula historial)
+* Silver ([transform/silver.py](https://github.com/Ana-FB/dolarapi-pipeline/blob/main/transform/silver.py)): trae de Bronze todo lo posterior a la última `fecha_carga` que ya tiene Silver (o el histórico completo si está vacía), aplica limpieza (normaliza texto, renombra `casa`→`tipo_dolar`, descarta filas inválidas, convierte tipos) y deriva `fecha`/`hora` en horario Argentina. Antes de cargar, descarta valores repetidos dentro del mismo día por `tipo_dolar` (si `compra`/`venta` no cambiaron respecto al último registro cargado hoy, no se vuelve a guardar), y aplica `drop_duplicates` dentro del batch como defensa extra ante reintentos. Se guarda en `capa_silver_dolares` con `WRITE_APPEND`.
 
 > **Nota de diseño:** el patrón estándar de industria para este tipo de carga incremental sería un `MERGE` (upsert) con watermark, que resuelve inserción y deduplicación en una sola operación atómica. Como el proyecto corre en BigQuery Sandbox (sin billing habilitado), no hay acceso a DML (`MERGE`, `UPDATE`, `DELETE`), así que el mismo patrón se reconstruyó manualmente: filtro por `fecha_carga` como watermark + deduplicación en pandas. Con billing habilitado, este paso se migraría a un `MERGE` real.
 
-- **Gold** ([transform/gold.py](transform/gold.py)): lee toda la capa Silver y calcula métricas de análisis:
-  - `spread` (venta − compra) y `spread_porcentual`
-  - `variacion_absoluta` y `variacion_porcentual` respecto al día anterior por casa de cambio (calculado en pandas con `groupby("casa")["venta"].shift(1)`, equivalente a un `LAG` de SQL)
-  - `fecha_formateada` (`dd-mm-aaaa`) para reportes
-  - descarta las columnas `fecha_carga` y `fechaActualizacion` del resultado final
-  - se guarda en `capa_gold_dolares_analisis` (`WRITE_TRUNCATE`: cada corrida recalcula y reemplaza toda la tabla, ya que las métricas dependen del historial completo de Silver)
+- Gold ([transform/gold.py](https://github.com/Ana-FB/dolarapi-pipeline/blob/main/transform/gold.py)): lee toda la capa Silver y calcula métricas de análisis — `spread`/`spread_porcentual`, `variacion_absoluta`/`variacion_porcentual` (venta y compra, contra el registro anterior de cada `tipo_dolar` vía `groupby().shift(1)`, equivalente a un `LAG` de SQL), `precio_promedio`, `tendencia` (Sube/Baja/Sin cambios) y `brecha_oficial` (diferencia % contra el oficial de referencia del día). Descarta `fecha_carga` y `fechaActualizacion`, y se guarda en `capa_gold_dolares_analisis` con `WRITE_TRUNCATE` (recalcula toda la tabla en cada corrida, ya que las métricas dependen del historial completo).
 
 El orquestador principal es [main.py](main.py), que corre las cuatro etapas en secuencia.
 

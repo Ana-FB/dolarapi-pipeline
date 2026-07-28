@@ -26,6 +26,9 @@ def obtener_ultima_fecha_carga(client, tabla_ref):
     return df["ultima_fecha"][0]
 
 
+
+# crea una tabla Silver en BigQuery a partir de la tabla Bronze, aplicando transformaciones y filtros
+
 def obtener_ultimo_valor_del_dia(client, tabla_ref):
     """Devuelve compra/venta más reciente por tipo_dolar, solo del día de hoy (AR) en Silver."""
     query = f"""
@@ -76,6 +79,10 @@ def crear_silver():
 
     df = df.drop_duplicates(subset=["tipo_dolar", "moneda", "fechaActualizacion"])
 
+    # fechaActualizacion viene en UTC. Se convierte a hora Argentina antes de
+    # derivar fecha/hora, para que "fecha" sea consistente con el
+    # CURRENT_DATE("America/Argentina/Buenos_Aires") que usa el filtro de
+    # "mismo valor, mismo día" más abajo.
     fecha_ar = pd.to_datetime(df["fechaActualizacion"], utc=True).dt.tz_convert("America/Argentina/Buenos_Aires")
     df["fecha"] = fecha_ar.dt.date
     df["hora"] = fecha_ar.dt.time
@@ -84,15 +91,12 @@ def crear_silver():
         print("No quedaron registros válidos para cargar en Silver.")
         return
 
-    # --- DEBUG: filtro de "mismo valor, mismo día" ---
+    # Descarta filas cuyo valor (compra/venta) es idéntico al último ya
+    # cargado HOY (hora Argentina) en Silver para ese tipo_dolar -> evita
+    # repetir el mismo valor varias veces cuando la API "actualiza" el
+    # timestamp sin que la cotización real haya cambiado.
     if silver_ya_existe:
         ultimos_hoy = obtener_ultimo_valor_del_dia(client, tabla_ref)
-
-        print("=== ULTIMOS_HOY (lo que ya tiene Silver hoy) ===")
-        print(ultimos_hoy)
-
-        print("=== DF ANTES DEL MERGE (lo que llegó de bronze) ===")
-        print(df[["tipo_dolar", "moneda", "compra", "venta", "fecha"]])
 
         if not ultimos_hoy.empty:
             df = df.merge(
@@ -102,20 +106,13 @@ def crear_silver():
                 suffixes=("", "_anterior"),
             )
 
-            print("=== DF DESPUES DEL MERGE ===")
-            print(df[["tipo_dolar", "compra", "compra_anterior", "venta", "venta_anterior"]])
-
             df = df[
                 (df["compra"] != df["compra_anterior"])
                 | (df["venta"] != df["venta_anterior"])
                 | (df["compra_anterior"].isna())
             ]
 
-            print("=== DF DESPUES DEL FILTRO (lo que realmente se va a cargar) ===")
-            print(df[["tipo_dolar", "compra", "venta"]])
-
             df = df.drop(columns=["compra_anterior", "venta_anterior"])
-    # --- FIN DEBUG ---
 
     if df.empty:
         print("No hay cambios de cotización nuevos para cargar en Silver.")
