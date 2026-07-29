@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from google.cloud import bigquery
-import pandas as pd
+
 
 
 load_dotenv()
@@ -131,6 +131,8 @@ def crear_gold():
         [["fecha", "venta"]]
         .rename(columns={"venta": "venta_oficial"})
     )
+    
+    # Hacer un merge para agregar la columna venta_oficial al dataframe df
 
     df = df.merge(
         oficial,
@@ -148,14 +150,6 @@ def crear_gold():
     ).round(2)
 
     df.drop(columns=["venta_oficial"], inplace=True)
-
-    # Fecha para analisis visual
-
-    df["fecha_formateada"] = (
-        pd.to_datetime(df["fecha"])
-        .dt
-        .strftime("%d-%m-%Y")
-    )
 
     # 3. Guardar Gold en BigQuery
 
